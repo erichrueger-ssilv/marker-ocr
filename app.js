@@ -157,8 +157,14 @@ function showToast(message, type = 'info') {
     setTimeout(() => toast.remove(), 4000);
 }
 
-function showLoading(show) {
-    $('#loadingOverlay').style.display = show ? 'flex' : 'none';
+function showLoading(show, message = 'Verarbeitung läuft...') {
+    const overlay = $('#loadingOverlay');
+    const text = $('#loadingText');
+    if (overlay) {
+        overlay.style.display = show ? 'flex' : 'none';
+        if (show) overlay.focus(); // Set focus to overlay for screen readers
+    }
+    if (text) text.textContent = message;
 }
 
 function formatFileSize(bytes) {
@@ -173,6 +179,14 @@ function setStepStatus(stepNum, status, message) {
     
     const statusEl = step.querySelector('.step-status');
     if (statusEl) statusEl.textContent = message || status;
+    
+    // Update global progress text (was orphaned)
+    const progressText = $('#progressText');
+    if (progressText) {
+        if (status === 'error') progressText.textContent = '⚠️ Fehler';
+        else if (status === 'completed') progressText.textContent = '✅ Abgeschlossen';
+        else progressText.textContent = message || '⏳ In Arbeit...';
+    }
     
     step.classList.remove('active', 'completed', 'error');
     step.classList.add(status === 'completed' ? 'completed' : status === 'error' ? 'error' : 'active');
@@ -2039,8 +2053,14 @@ function initSidebar() {
     
     const toggleSidebar = (e) => {
         if (e) e.preventDefault();
-        app.classList.toggle('sidebar-collapsed');
-        localStorage.setItem('sidebarCollapsed', app.classList.contains('sidebar-collapsed'));
+        const isCollapsed = app.classList.toggle('sidebar-collapsed');
+        localStorage.setItem('sidebarCollapsed', isCollapsed);
+        
+        // Update ARIA states
+        const toggleBtn = $('#sidebarToggle');
+        if (toggleBtn) toggleBtn.setAttribute('aria-expanded', !isCollapsed);
+        const backdrop = $('#sidebarBackdrop');
+        if (backdrop) backdrop.setAttribute('aria-hidden', isCollapsed);
         
         // Dispatch resize event for preview components
         setTimeout(() => window.dispatchEvent(new Event('resize')), 400);
@@ -3087,6 +3107,14 @@ on('#logoClick', 'click', () => {
     openShortcutsModal();
 });
 
+// Keyboard support for help (logo) button
+$('#logoClick')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        openShortcutsModal();
+    }
+});
+
 on('#shortcutsClose', 'click', () => {
     closeShortcutsModal();
 });
@@ -3106,5 +3134,10 @@ document.addEventListener('keydown', (e) => {
         }
     }
 });
+
+// Initialize version badge (was orphaned)
+const APP_VERSION = 'v2.46';
+const versionEl = $('#versionBadge');
+if (versionEl) versionEl.textContent = APP_VERSION;
 
 console.log('PDF Pipeline Frontend loaded! 🚀');

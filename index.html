@@ -56,12 +56,13 @@
                         <line x1="17" y1="16" x2="23" y2="16"></line>
                     </svg>
                 </button>
-                <div class="logo" id="logoClick" title="Tastenkombinationen anzeigen" style="cursor: pointer;">
-                    <img src="logo-ssilv.png" alt="Schloss-Schule Ilvesheim" style="height: 40px; width: auto;">
+                <div class="logo" id="logoClick" title="Tastenkombinationen anzeigen" style="cursor: pointer;"
+                    role="button" tabindex="0" aria-label="Hilfe und Tastenkombinationen anzeigen">
+                    <img src="logo-ssilv.png" alt="Logo Schloss-Schule Ilvesheim" style="height: 40px; width: auto;">
                 </div>
                 <div class="header-title">
-                    <p class="subtitle">PDF zu E-Buch</p>
-                    <span class="version-badge" id="versionBadge">v2.41</span>
+                    <h1 class="subtitle">PDF zu E-Buch</h1>
+                    <span class="version-badge" id="versionBadge">v2.46</span>
                 </div>
             </div>
         </header>
@@ -310,7 +311,7 @@ Beschreibung: …  / Bildtext: …
                                 <div class="action-bar" style="margin-top: 12px;">
                                     <!-- Quick settings -->
                                     <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
-                                        <input type="text" id="qs-pageRange" placeholder="Seiten (z.B. 1-10)" title="Zu erkennende Seiten" style="width:120px;font-size:0.85rem;padding:5px 8px;">
+                                        <input type="text" id="qs-pageRange" placeholder="Seiten (z.B. 1-10)" title="Zu erkennende Seiten" aria-label="Zu erkennende Seiten (z. B. 1-10)" style="width:120px;font-size:0.85rem;padding:5px 8px;">
                                         <label style="font-size:0.85rem;white-space:nowrap;display:flex;align-items:center;gap:4px;"><input type="checkbox" id="qs-paginate" checked> Seitenzahlen anzeigen</label>
                                         <label style="font-size:0.85rem;white-space:nowrap;display:flex;align-items:center;gap:4px;"><input type="checkbox" id="qs-showPages" checked> E-Buch Seitenzahlen</label>
                                         <label style="font-size:0.85rem;white-space:nowrap;display:flex;align-items:center;gap:4px;">ab Seite <input type="number" id="qs-pageStart" value="1" min="1" style="width:45px;font-size:0.85rem;padding:5px;"></label>
@@ -484,18 +485,18 @@ Beschreibung: …  / Bildtext: …
         </div>
     </div>
 
-    <div class="loading-overlay" id="loadingOverlay">
+    <div class="loading-overlay" id="loadingOverlay" role="dialog" aria-modal="true" aria-labelledby="loadingText">
         <div class="loading-spinner">
             <div class="spinner"></div>
             <p id="loadingText">Verarbeitung läuft...</p>
         </div>
     </div>
-    <div class="toast-container" id="toastContainer"></div>
+    <div class="toast-container" id="toastContainer" role="status" aria-live="polite"></div>
     <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
 
     <!-- Image Editor Modal -->
-    <div id="imageEditor" class="editor-modal" style="display:none;">
-        <button class="editor-close-x" id="editorCloseX" title="Schließen">✕</button>
+    <div id="imageEditor" class="editor-modal" style="display:none;" role="dialog" aria-modal="true" aria-label="Bild-Editor">
+        <button class="editor-close-x" id="editorCloseX" title="Schließen" aria-label="Editor schließen">✕</button>
         <div class="editor-toolbar">
             <div class="editor-toolbar-scroll">
                 <button class="tool-btn" id="toolCrop" title="Zuschneiden">✂️</button>
@@ -522,11 +523,11 @@ Beschreibung: …  / Bildtext: …
     </div>
 
     <!-- Shortcuts Modal -->
-    <div id="shortcutsModal" class="shortcuts-modal" style="display:none;">
+    <div id="shortcutsModal" class="shortcuts-modal" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="shortcutsTitle">
         <div class="shortcuts-content">
             <div class="shortcuts-header">
-                <h3>⌨️ Tastenkombinationen</h3>
-                <button class="shortcuts-close" id="shortcutsClose">✕</button>
+                <h3 id="shortcutsTitle">⌨️ Tastenkombinationen</h3>
+                <button class="shortcuts-close" id="shortcutsClose" aria-label="Modal schließen">✕</button>
             </div>
             <div class="shortcuts-body">
                 <div class="shortcut-group">
@@ -552,7 +553,7 @@ Beschreibung: …  / Bildtext: …
         </div>
     </div>
 
-    <script src="app.js?v=20260426"></script>
+    <script src="app.js?v=20260429"></script>
 </body>
 
 </html>
