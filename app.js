@@ -80,6 +80,61 @@ let comparePageMap = {}; // {pageNum: {pdfPage, extractedImages[], descriptions[
 // ===== Markdown Sync State =====
 let mdPageOffsets = {}; // {pageNum: htmlElementId}
 
+/* ===== marked.js Extensions & Configuration ===== */
+
+// 1. LaTeX Protection: Prevents marked from mangling math formulas
+const latexExtension = {
+    name: 'latex',
+    level: 'inline',
+    start(src) { return src.indexOf('$'); },
+    tokenizer(src, tokens) {
+        // Match $$, $, \( \), \[ \]
+        const match = src.match(/^(\$\$[\s\S]+?\$\$|\$[\s\S]*?\$|\\\(.*?\\\)|\\\[[\s\S]*?\\\])/);
+        if (match) {
+            return {
+                type: 'latex',
+                raw: match[0],
+                text: match[0]
+            };
+        }
+    },
+    renderer(token) {
+        return token.text;
+    }
+};
+
+// 2. Page Marker: Handles ((1)), ((Page 1)), (( )) for anchored dividers
+const pageNumberExtension = {
+    name: 'pageNumber',
+    level: 'block',
+    tokenizer(src, tokens) {
+        // Match lines starting with ((...))
+        const match = src.match(/^\(\((Seite\s+|Page\s+)?(\d+| )\)\)\s*(?:\n|$)/i);
+        if (match) {
+            return {
+                type: 'pageNumber',
+                raw: match[0],
+                number: match[2].trim() || ' ',
+                text: match[0].trim()
+            };
+        }
+    },
+    renderer(token) {
+        const num = token.number === ' ' ? '&nbsp;' : token.number;
+        const idAttr = token.number !== ' ' ? ` id="md-page-${token.number}"` : '';
+        return `<div class="md-page-marker"${idAttr}><span class="md-page-marker-text">((${num}))</span></div>\n`;
+    }
+};
+
+// Configure marked with extensions and standard GFM options
+marked.use({ 
+    extensions: [latexExtension, pageNumberExtension],
+    breaks: true,
+    gfm: true,
+    mangle: false,
+    headerIds: false
+});
+
 // ===== DOM Elements =====
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
@@ -497,7 +552,7 @@ function insertPageNumbers(md) {
 }
 
 function renderMarkdown(md) {
-    // Insert page numbers before rendering
+    // 1. Insert page numbers before rendering (adds ((1)) tags)
     const mdWithNumbers = insertPageNumbers(md);
     
     // Update the raw text source to show page numbers too
@@ -510,7 +565,8 @@ function renderMarkdown(md) {
     // Reset page offsets
     mdPageOffsets = {};
     
-    // Split into lines for figure detection
+    // 2. Pre-process lines for project-specific image & caption logic
+    // We do this line-by-line because of the non-standard caption lookahead
     const lines = md.split('\n');
     const processed = [];
     let i = 0;
@@ -519,57 +575,38 @@ function renderMarkdown(md) {
         const line = lines[i];
         const stripped = line.trim();
         
-        // Check for image reference
+        // Detect Markdown image: ![alt](filename)
         const imgMatch = stripped.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
         if (imgMatch) {
             const alt = imgMatch[1];
             const fname = imgMatch[2];
-            const hasCaption = state.captions && state.captions[fname];
             
-            // Find caption text (skip blank lines)
+            // Look ahead for caption text (skip blank lines)
             let captionText = null;
             let j = i + 1;
             while (j < lines.length && lines[j].trim() === '') {
                 j++;
             }
             if (j < lines.length && lines[j].trim() !== '') {
-                captionText = lines[j].trim();
+                 const nextLine = lines[j].trim();
+                 // If the next non-empty line isn't another image or a heading, treat it as a caption
+                 if (!nextLine.startsWith('!') && !nextLine.startsWith('#')) {
+                    captionText = nextLine;
+                 }
             }
             
-            // Find base64 image data - try multiple key formats
+            // Resolve base64 image data from state.images
             let imgSrc = fname;
-            let imgAlt = alt;
-            let captionForAlt = captionText || null;
             let foundImage = false;
             
-            // Try direct match first
             if (state.images[fname]) {
                 imgSrc = `data:image/jpeg;base64,${state.images[fname]}`;
                 foundImage = true;
-            }
-            
-            // Try without leading underscore (_page_ → page_)
-            if (!foundImage && fname.startsWith('_')) {
-                const withoutLeading = fname.substring(1);
-                if (state.images[withoutLeading]) {
-                    imgSrc = `data:image/jpeg;base64,${state.images[withoutLeading]}`;
-                    foundImage = true;
-                }
-            }
-            
-            // Try with _page_ prefix removed from _page_...
-            if (!foundImage && fname.startsWith('_page_')) {
-                const fromPage = fname.substring(6);
-                if (state.images[fromPage]) {
-                    imgSrc = `data:image/jpeg;base64,${state.images[fromPage]}`;
-                    foundImage = true;
-                }
-            }
-            
-            // Fallback: search for any key that ends with this filename
-            if (!foundImage) {
+            } else {
+                // Try fuzzy matches for the filename
                 for (const key of Object.keys(state.images)) {
-                    if (key.endsWith(fname) || fname.endsWith(key)) {
+                    if (key === fname || key.endsWith(fname) || fname.endsWith(key) || 
+                        key.replace(/^_page_/, '') === fname.replace(/^_page_/, '')) {
                         imgSrc = `data:image/jpeg;base64,${state.images[key]}`;
                         foundImage = true;
                         break;
@@ -577,106 +614,66 @@ function renderMarkdown(md) {
                 }
             }
             
-            if (foundImage) {
-                imgAlt = captionForAlt || alt;
-            } else {
-                // Image not found in state.images - show a placeholder
+            if (!foundImage && !fname.startsWith('http') && !fname.startsWith('data:')) {
                 imgSrc = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" style="background:#f0f0f0;display:flex;align-items:center;justify-content:center"><text x="50%" y="50%" text-anchor="middle" fill="#999" font-size="14" dy=".3em">Bild nicht gefunden: ${fname}</text></svg>`)}`;
-                debugLog(`Bild nicht gefunden in state.images: "${fname}"`, 'warn');
+                debugLog(`Bild nicht gefunden: "${fname}"`, 'warning');
             }
             
-            // Extract page number from filename for sync
-            let pageMatch = fname.match(/(?:page|seite)[_\s-]?(\d+)/i);
-            if (!pageMatch) pageMatch = fname.match(/(\d+)/);
-            const pageNum = pageMatch ? pageMatch[1] : null;
-            const anchorId = pageNum ? `md-page-${pageNum}` : null;
-            if (anchorId && !mdPageOffsets[pageNum]) {
-                mdPageOffsets[pageNum] = anchorId;
+            // Extract page number for navigation tracking
+            const pageMatch = fname.match(/(?:page|seite)[_\s-]?(\d+)/i) || fname.match(/(\d+)/);
+            if (pageMatch) {
+                const pageNum = pageMatch[1];
+                mdPageOffsets[pageNum] = `md-page-${pageNum}`;
             }
             
-            // Build HTML
-            let html;
-            if (hasCaption || captionText) {
-                // Render as figure with figcaption
-                let captionDisplay = captionForAlt || captionText || imgAlt || '';
-                html = anchorId ? `<div id="${anchorId}" class="md-page-anchor"></div>` : '';
-                html += `<figure class="image-caption"><img src="${imgSrc}" alt="${imgAlt}" title="${captionDisplay}" style="display:block;margin:12px auto;max-width:100%;height:auto;">`;
-                if (captionDisplay) {
-                    html += `<figcaption>${captionDisplay}</figcaption>`;
-                }
-                html += `</figure>`;
-            } else {
-                // Render as plain image (no caption)
-                html = anchorId ? `<div id="${anchorId}" class="md-page-anchor"></div>` : '';
-                html += `<img src="${imgSrc}" alt="${imgAlt}" style="display:block;margin:12px auto;max-width:100%;height:auto;">`;
+            // Generate HTML for the figure
+            let html = `<figure class="image-caption">
+                <img src="${imgSrc}" alt="${alt}" style="display:block;margin:12px auto;max-width:100%;height:auto;">`;
+            if (captionText) {
+                html += `<figcaption>${captionText}</figcaption>`;
             }
+            html += `</figure>`;
             
             processed.push(html);
-            if (captionText) {
-                i = j + 1; // Skip caption line
-            } else {
-                i++;
-            }
+            
+            if (captionText) i = j + 1; // Skip the caption line
+            else i++;
         } else {
             processed.push(line);
             i++;
         }
     }
     
-    // Update raw source
-    safeText('#mdSource', state.markdown || processed.join('\n'));
-
-    // Build overall HTML
-    let finalHtml = processed.join('\n')
-        .replace(/^###### (.+)$/gm, '<h6>$1</h6>')
-        .replace(/^##### (.+)$/gm, '<h5>$1</h5>')
-        .replace(/^#### (.+)$/gm, '<h4>$1</h4>')
-        .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-        .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-        .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-        .replace(/\*(.+?)\*/g, '<em>$1</em>')
-        .replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>')
-        .replace(/^- (.+)$/gm, '<li>$1</li>')
-        .replace(/\n/g, '<br>');
+    // 3. Render with marked.js
+    let finalHtml = '';
+    try {
+        finalHtml = marked.parse(processed.join('\n'));
+    } catch (err) {
+        console.error('Marked rendering error:', err);
+        finalHtml = processed.join('<br>\n'); // Robust fallback
+    }
     
+    // 4. Update Preview Container
     safeHTML('#mdRendered', finalHtml);
+    
+    // 5. Trigger MathJax Typesetting
     if (mathjaxEnabled && window.MathJax) {
-        MathJax.typesetPromise(['#mdRendered']).then(() => {
-            // Restore scroll after MathJax typesetting complete
-            if (window._mathjaxScrollTop !== undefined) {
-                const mdRendered = $('#mdRendered');
-                if (mdRendered) {
-                    mdRendered.scrollTop = window._mathjaxScrollTop;
-                    delete window._mathjaxScrollTop;
-                }
-            }
-        });
-        // Store scroll position for later restoration
         const mdRendered = $('#mdRendered');
         if (mdRendered) window._mathjaxScrollTop = mdRendered.scrollTop;
-    } else if (!mathjaxEnabled) {
-        // Show raw LaTeX code instead of rendered formulas
-        const rendered = $('#mdRendered');
-        if (rendered) {
-            rendered.querySelectorAll('mjx-container').forEach(el => {
-                const parent = el.parentNode;
-                if (parent && parent.tagName !== 'CODE' && parent.tagName !== 'PRE') {
-                    const code = document.createElement('code');
-                    code.className = 'mathjax-code';
-                    code.textContent = el.getAttribute('aria-label') || el.textContent;
-                    code.style.cssText = 'background:#f4f4f4;padding:2px 6px;border-radius:3px;font-family:monospace;';
-                    parent.replaceChild(code, el);
-                }
-            });
-        }
-        // Restore scroll for non-MathJax case too
-        if (window._mathjaxScrollTop !== undefined) {
-            const mdRendered = $('#mdRendered');
-            if (mdRendered) {
+        
+        MathJax.typesetPromise(['#mdRendered']).then(() => {
+            // Restore scroll position after typesetting
+            if (window._mathjaxScrollTop !== undefined && mdRendered) {
                 mdRendered.scrollTop = window._mathjaxScrollTop;
                 delete window._mathjaxScrollTop;
             }
+        });
+    } else {
+        // Fallback for when MathJax is disabled or missing
+        const mdRendered = $('#mdRendered');
+        if (mdRendered && window._mathjaxScrollTop !== undefined) {
+             mdRendered.scrollTop = window._mathjaxScrollTop;
+             delete window._mathjaxScrollTop;
         }
     }
 }
